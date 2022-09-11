@@ -122,6 +122,7 @@
 mod hw;
 mod sw_mixer;
 
+use alloc::boxed::Box;
 pub use sw_mixer::ChannelId;
 pub use sw_mixer::Mixer;
 
@@ -210,7 +211,8 @@ enum SoundPriority {
 /// # }
 /// ```
 pub struct SoundChannel {
-    data: &'static [u8],
+    gen: Box<dyn FnMut(&mut [u8])>,
+    // TODO: Some of these fields are unused since SoundChannel generates audio itself.
     pos: Num<usize, 8>,
     should_loop: bool,
 
@@ -252,9 +254,9 @@ impl SoundChannel {
     /// ```
     #[inline(always)]
     #[must_use]
-    pub fn new(data: &'static [u8]) -> Self {
+    pub fn new(gen: Box<dyn FnMut(&mut [u8])>) -> Self {
         SoundChannel {
-            data,
+            gen,
             pos: 0.into(),
             should_loop: false,
             playback_speed: 1.into(),
@@ -295,9 +297,9 @@ impl SoundChannel {
     /// ```
     #[inline(always)]
     #[must_use]
-    pub fn new_high_priority(data: &'static [u8]) -> Self {
+    pub fn new_high_priority(_: &'static [u8]) -> Self {
         SoundChannel {
-            data,
+            gen: Box::new(|_| { todo!() }),
             pos: 0.into(),
             should_loop: false,
             playback_speed: 1.into(),

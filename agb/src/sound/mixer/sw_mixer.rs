@@ -187,7 +187,8 @@ impl Mixer {
             .set_overflow_amount(constants::SOUND_BUFFER_SIZE as u16)
             .set_enabled(true);
 
-        add_interrupt_handler(timer1.interrupt(), move |cs| self.buffer.swap(cs))
+        let buffer = &self.buffer;
+        add_interrupt_handler(timer1.interrupt(), move |cs| buffer.swap(cs))
     }
 
     /// Do the CPU intensive mixing for the next frame's worth of data.
@@ -390,6 +391,10 @@ impl MixerBufferState {
     }
 }
 
+// Since SoundChannels just need to generate samples, they can share one temporary buffer.
+// TODO: Haven't tried generating stereo sound yet.
+static mut BUFFER: [u8; constants::SOUND_BUFFER_SIZE] = [0; constants::SOUND_BUFFER_SIZE];
+
 impl MixerBuffer {
     fn new() -> Self {
         set_asm_buffer_size();
@@ -434,22 +439,26 @@ impl MixerBuffer {
                 channel.playback_speed
             };
 
-            if (channel.pos + playback_speed * constants::SOUND_BUFFER_SIZE).floor()
-                >= channel.data.len()
-            {
-                // TODO: This should probably play what's left rather than skip the last bit
-                if channel.should_loop {
-                    channel.pos = 0.into();
-                } else {
-                    channel.is_done = true;
-                    continue;
-                }
-            }
+            // TODO: Could allow `channel.gen` to signal that it's done
+            // by returning false or a number of samples less than the buffer length.
+            // if (channel.pos + playback_speed * constants::SOUND_BUFFER_SIZE).floor()
+            //     >= channel.data.len()
+            // {
+            //     // TODO: This should probably play what's left rather than skip the last bit
+            //     if channel.should_loop {
+            //         channel.pos = 0.into();
+            //     } else {
+            //         channel.is_done = true;
+            //         continue;
+            //     }
+            // }
+
+            (channel.gen)(unsafe { &mut BUFFER });
 
             if channel.is_stereo {
                 unsafe {
                     agb_rs__mixer_add_stereo(
-                        channel.data.as_ptr().add(channel.pos.floor()),
+                        BUFFER.as_ptr(),
                         buffer.as_mut_ptr(),
                         channel.volume,
                     );
@@ -460,7 +469,7 @@ impl MixerBuffer {
 
                 unsafe {
                     agb_rs__mixer_add(
-                        channel.data.as_ptr().add(channel.pos.floor()),
+                        BUFFER.as_ptr(),
                         buffer.as_mut_ptr(),
                         playback_speed,
                         left_amount,
